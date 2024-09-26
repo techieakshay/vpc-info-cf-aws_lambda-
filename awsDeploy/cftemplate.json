@@ -1,0 +1,144 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation template to create a Lambda function to retrieve detailed information about a VPC by VPC ID.",
+    "Resources": {
+      "VpcInfoLambdaExecutionRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "lambda.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+              }
+            ]
+          },
+          "Policies": [
+            {
+              "PolicyName": "VpcInfoLambdaPolicy",
+              "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "logs:CreateLogGroup",
+                      "logs:CreateLogStream",
+                      "logs:PutLogEvents"
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*"
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DescribeVpcs",
+                      "ec2:DescribeSubnets",
+                      "ec2:DescribeRouteTables",
+                      "ec2:DescribeInternetGateways",
+                      "ec2:DescribeNetworkAcls",
+                      "ec2:DescribeSecurityGroups",
+                      "ec2:DescribeAvailabilityZones"
+                    ],
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "VpcInfoLambdaFunction": {
+        "Type": "AWS::Lambda::Function",
+        "Properties": {
+          "Handler": "index.handler",
+          "FunctionName": "VpcInfoLambdaFunction",
+          "Role": {
+            "Fn::GetAtt": [
+              "VpcInfoLambdaExecutionRole",
+              "Arn"
+            ]
+          },
+          "Runtime": "nodejs14.x",
+          "Code": {
+            "ZipFile": {
+              "Fn::Join": [
+                "\n",
+                [
+                  "const AWS = require('aws-sdk');",
+                  "const ec2 = new AWS.EC2();",
+                  "",
+                  "exports.handler = async (event) => {",
+                  "    const vpcId = event.vpcId || '';",
+                  "    if (!vpcId) {",
+                  "        return {",
+                  "            statusCode: 400,",
+                  "            body: JSON.stringify({ error: 'Missing VPC ID' })",
+                  "        };",
+                  "    }",
+                  "    try {",
+                  "        // Describe VPC",
+                  "        const vpcData = await ec2.describeVpcs({ VpcIds: [vpcId] }).promise();",
+                  "        const vpcInfo = vpcData.Vpcs[0];",
+                  "",
+                  "        // Describe Subnets",
+                  "        const subnetData = await ec2.describeSubnets({ Filters: [{ Name: 'vpc-id', Values: [vpcId] }] }).promise();",
+                  "",
+                  "        // Describe Route Tables",
+                  "        const routeTableData = await ec2.describeRouteTables({ Filters: [{ Name: 'vpc-id', Values: [vpcId] }] }).promise();",
+                  "",
+                  "        // Describe Internet Gateways",
+                  "        const igwData = await ec2.describeInternetGateways({ Filters: [{ Name: 'attachment.vpc-id', Values: [vpcId] }] }).promise();",
+                  "",
+                  "        // Describe Network ACLs",
+                  "        const naclData = await ec2.describeNetworkAcls({ Filters: [{ Name: 'vpc-id', Values: [vpcId] }] }).promise();",
+                  "",
+                  "        // Describe Security Groups",
+                  "        const sgData = await ec2.describeSecurityGroups({ Filters: [{ Name: 'vpc-id', Values: [vpcId] }] }).promise();",
+                  "",
+                  "        // Describe Availability Zones",
+                  "        const azData = await ec2.describeAvailabilityZones().promise();",
+                  "",
+                  "        // Consolidate results",
+                  "        const result = {",
+                  "            VPC: vpcInfo,",
+                  "            Subnets: subnetData.Subnets,",
+                  "            RouteTables: routeTableData.RouteTables,",
+                  "            InternetGateways: igwData.InternetGateways,",
+                  "            NetworkACLs: naclData.NetworkAcls,",
+                  "            SecurityGroups: sgData.SecurityGroups,",
+                  "            AvailabilityZones: azData.AvailabilityZones",
+                  "        };",
+                  "",
+                  "        return {",
+                  "            statusCode: 200,",
+                  "            body: result",
+                  "        };",
+                  "    } catch (error) {",
+                  "        console.error('Error retrieving VPC details:', error);",
+                  "        return {",
+                  "            statusCode: 500,",
+                  "            body: JSON.stringify({ error: 'Failed to retrieve VPC information' })",
+                  "        };",
+                  "    }",
+                  "};"
+                ]
+              ]
+            }
+          },
+          "Timeout": 30
+        }
+      }
+    },
+    "Outputs": {
+      "VpcInfoLambdaArn": {
+        "Description": "ARN of the Lambda function that retrieves VPC information",
+        "Value": {
+          "Ref": "VpcInfoLambdaFunction"
+        }
+      }
+    }
+  }
